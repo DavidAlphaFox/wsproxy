@@ -40,7 +40,7 @@ module Wsprotocol (IO : Iteratees.Monad) = struct
     modify decode s
 
   let writer = I.writer
-
+  (* 进行frame编码*)
   let wsframe s = modify (fun s ->
       let l = String.length s in
       if l < 126

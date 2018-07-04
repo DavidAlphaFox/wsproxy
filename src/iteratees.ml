@@ -37,7 +37,7 @@ module Iteratee (IO : Monad) = struct
   type 'a t =
     | IE_done of 'a
     | IE_cont of err option * (stream -> ('a t * stream) IO.t)
-
+  (* 使用return 和 bind 来实现Monad，所谓Monad简单说就是数据的pack和unpack*)
   let return x = IE_done x
 
   let rec bind i f =
@@ -90,14 +90,12 @@ module Iteratee (IO : Monad) = struct
     in
     IE_cont (None, step)
 
-  let writer really_write _ =
+  let writer really_write _ = (* 循环的的使用step进行写 *)
     let rec step st =
       match st with
-      | Chunk s ->
-        IO.bind (really_write s)
-          (fun () -> IO.return (IE_cont (None, step), Chunk ""))
-      | Eof _ ->
-        IO.return (IE_done (), st)
+      | Chunk s -> IO.bind (really_write s) (fun () -> IO.return (IE_cont (None, step), Chunk ""))
+        (* really_write是一个纯粹的写IO函数，会一直将数据写完 *)
+      | Eof _ -> IO.return (IE_done (), st)
     in
     IE_cont (None, step)
 
@@ -287,11 +285,9 @@ module Iteratee (IO : Monad) = struct
       | Eof _ ->
         IO.bind (k s) (fun (i,_) -> IO.return (IE_done i, s))
     in fun s -> match s with
-      | IE_cont (None, k) ->
-        IE_cont (None, step k)
-      | IE_cont (Some _, _) ->
-        return s
-      | IE_done _ -> return s
+      | IE_cont (None, k) -> IE_cont (None, step k) (* 通过使用step函数，将函数f附加在函数k之前，形成一个流操作 *)
+      | IE_cont (Some _, _) -> return s  (* 返回 IE_done IE_cont (Some _, _) *)
+      | IE_done _ -> return s (* 返回 IE_done IE_done _ *)
 
   type 'a either = Left of 'a | Right of 'a
 

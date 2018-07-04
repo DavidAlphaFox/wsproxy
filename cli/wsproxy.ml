@@ -24,7 +24,7 @@ let start path handler =
   let dir_path = get_dir_path () in
   let fd_sock_path = Printf.sprintf "%s%s" dir_path path in
   Lwt_log.info_f "Starting wsproxy on %s" fd_sock_path >>= fun () ->
-  let fd_sock = Lwt_unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0 in
+  let fd_sock = Lwt_unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0 in (* unix domain socket*)
   Lwt.catch
     (fun () -> Lwt_unix.unlink fd_sock_path)
     (fun _ -> Lwt.return_unit) >>= fun () ->
@@ -45,22 +45,22 @@ let start path handler =
          >>= fun (fd_sock',_) ->
          (* Background thread per connection *)
          let _ : unit Lwt.t =
-           let buffer = String.make 16384 '\000' in
+           let buffer = String.make 16384 '\000' in (* 建立buffer *)
            with_fd fd_sock'
              ~callback:(fun fd ->
-                let iov = Lwt_unix.io_vector ~buffer ~offset:0 ~length:16384 in
-                Lwt_unix.recv_msg ~socket:fd ~io_vectors:[iov])
+                 let iov = Lwt_unix.io_vector ~buffer ~offset:0 ~length:16384 in
+                 Lwt_unix.recv_msg ~socket:fd ~io_vectors:[iov])
            >>= fun (len, newfds) ->
            match newfds with
            | [] -> Lwt_log.warning "No fd to start a connection: not proxying"
-           | ufd :: ufds ->
+           | ufd :: ufds -> (* 每次只处理一个fd，剩下的fd全都会被关闭 *)
              ensure_close ufds >>= fun () ->
              with_fd (Lwt_unix.of_unix_file_descr ufd)
                ~callback:(fun fd ->
-                  Lwt_log.debug_f "About to start connection" >>= fun () ->
-                  Lwt_unix.setsockopt fd Lwt_unix.SO_KEEPALIVE true;
-                  let msg = String.sub buffer 0 len in
-                  handler fd msg)
+                   Lwt_log.debug_f "About to start connection" >>= fun () ->
+                   Lwt_unix.setsockopt fd Lwt_unix.SO_KEEPALIVE true;
+                   let msg = String.sub buffer 0 len in
+                   handler fd msg)
          in loop ())
       (fun e ->
          Lwt_log.error_f "Caught exception: %s" (Printexc.to_string e) >>= fun () ->
@@ -88,10 +88,10 @@ let proxy (fd : Lwt_unix.file_descr) protocol localport =
   with_open_connection_fd "localhost" localport ~callback:(fun localfd ->
       let session_id = Uuidm.v `V4 |> Uuidm.to_string in
       Lwt_log.debug_f "Starting proxy session %s" session_id >>= fun () ->
-      let thread1 =
+      let thread1 = (* 从本地读取，写入到远端 *)
         lwt_fd_enumerator localfd (frame (writer (really_write fd) "thread1")) >>= fun _ ->
         Lwt.return_unit in
-      let thread2 =
+      let thread2 = (* 从远端读取，写入到本地 *)
         lwt_fd_enumerator fd (unframe (writer (really_write localfd) "thread2")) >>= fun _ ->
         Lwt.return_unit in
       (* closing the connection in one of the threads above in general leaves the other pending forever,
@@ -106,7 +106,7 @@ let handler sock msg =
   | [protocol;_;sport]
   | [protocol;sport] ->
     let port = int_of_string sport in
-    proxy sock protocol port
+    proxy sock protocol port (* 为sock进行代理 *)
   | _ -> Lwt_log.warning "Malformed msg: not proxying"
 
 

@@ -20,7 +20,7 @@ type 'a t = 'a Iteratee(Lwt).t =
 
 let (>>=) = Lwt.bind
 
-let really_write fd str =
+let really_write fd str = (* 将数据循环写道fd上 *)
   let len = String.length str in
   let rec inner written =
     Lwt_unix.write fd (Bytes.unsafe_of_string str) written (len-written)
